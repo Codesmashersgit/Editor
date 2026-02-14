@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import CodeEditorWindow from "./CodeEditorWindow";
 import axios from "axios";
 import { classnames } from "../utils/general";
@@ -25,22 +25,14 @@ const binarySearch = (arr, target) => {
 };
 
 const binarySearchHelper = (arr, target, start, end) => {
- if (start > end) {
-   return false;
- }
+ if (start > end) return false;
  let mid = Math.floor((start + end) / 2);
- if (arr[mid] === target) {
-   return mid;
- }
- if (arr[mid] < target) {
-   return binarySearchHelper(arr, target, mid + 1, end);
- }
- if (arr[mid] > target) {
-   return binarySearchHelper(arr, target, start, mid - 1);
- }
+ if (arr[mid] === target) return mid;
+ if (arr[mid] < target) return binarySearchHelper(arr, target, mid + 1, end);
+ if (arr[mid] > target) return binarySearchHelper(arr, target, start, mid - 1);
 };
 
-const arr = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+const arr = [1,2,3,4,5,6,7,8,9,10];
 const target = 5;
 console.log(binarySearch(arr, target));
 `;
@@ -49,39 +41,17 @@ const Landing = () => {
   const [code, setCode] = useState(javascriptDefault);
   const [customInput, setCustomInput] = useState("");
   const [outputDetails, setOutputDetails] = useState(null);
-  const [processing, setProcessing] = useState(null);
+  const [processing, setProcessing] = useState(false);
   const [theme, setTheme] = useState("cobalt");
   const [language, setLanguage] = useState(languageOptions[0]);
 
   const enterPress = useKeyPress("Enter");
   const ctrlPress = useKeyPress("Control");
 
-  const onSelectChange = (sl) => {
-    console.log("selected Option...", sl);
-    setLanguage(sl);
-  };
+  const onSelectChange = (sl) => setLanguage(sl);
 
-  useEffect(() => {
-    if (enterPress && ctrlPress) {
-      console.log("enterPress", enterPress);
-      console.log("ctrlPress", ctrlPress);
-      handleCompile();
-    }
-  }, [ctrlPress, enterPress]);
-
-  const onChange = (action, data) => {
-    switch (action) {
-      case "code": {
-        setCode(data);
-        break;
-      }
-      default: {
-        console.warn("case not handled!", action, data);
-      }
-    }
-  };
-
-  const handleCompile = () => {
+  // ✅ Stable handleCompile wrapped in useCallback
+  const handleCompile = useCallback(() => {
     setProcessing(true);
     const formData = {
       language_id: language.id,
@@ -102,72 +72,73 @@ const Landing = () => {
 
     axios
       .request(options)
-      .then(function (response) {
-        const token = response.data.token;
-        checkStatus(token);
-      })
+      .then((response) => checkStatus(response.data.token))
       .catch((err) => {
-        console.error("Submission Error:", err.response || err); 
+        console.error("Submission Error:", err.response || err);
         setProcessing(false);
       });
-  };
+  }, [code, customInput, language]);
 
-  const checkStatus = async (token) => { 
-
+  const checkStatus = async (token) => {
     const options = {
       method: "GET",
-      url: `${process.env.REACT_APP_RAPID_API_URL}/submissions/${token}`, 
+      url: `${process.env.REACT_APP_RAPID_API_URL}/submissions/${token}`,
       params: { base64_encoded: "true", fields: "*" },
       headers: {
         "x-rapidapi-host": process.env.REACT_APP_RAPID_API_HOST,
         "x-rapidapi-key": process.env.REACT_APP_RAPID_API_KEY,
       },
     };
-    try {
-      let response = await axios.request(options); 
 
+    try {
+      let response = await axios.request(options);
       let statusId = response.data.status?.id;
 
-      // Processed - we have a result
       if (statusId === 1 || statusId === 2) {
         // still processing
-        setTimeout(() => {
-          checkStatus(token);
-        }, 2000);
+        setTimeout(() => checkStatus(token), 2000);
         return;
       } else {
         setProcessing(false);
         setOutputDetails(response.data);
-        showSuccessToast(`Compiled Successfully!`);
-       
-        return;
+        showSuccessToast("Compiled Successfully!");
       }
     } catch (err) {
-      console.error("Status Check Error:", err.response || err); // Debug log
+      console.error("Status Check Error:", err.response || err);
       setProcessing(false);
       showErrorToast();
     }
   };
 
-  function handleThemeChange(th) {
-    const theme = th;
-    console.log("theme...", theme);
-
-    if (["light", "vs-dark"].includes(theme.value)) {
-      setTheme(theme);
+  const handleThemeChange = (th) => {
+    if (["light", "vs-dark"].includes(th.value)) {
+      setTheme(th);
     } else {
-      defineTheme(theme.value).then((_) => setTheme(theme));
+      defineTheme(th.value).then(() => setTheme(th));
     }
-  }
+  };
 
+  // Initial theme setup
   useEffect(() => {
-    defineTheme("oceanic-next").then((_) =>
+    defineTheme("oceanic-next").then(() =>
       setTheme({ value: "oceanic-next", label: "Oceanic Next" })
     );
   }, []);
 
-  const showSuccessToast = (msg) => {
-    toast.success(msg || `Compiled Successfully!`, {
+  // ✅ useEffect with handleCompile in deps to fix Netlify CI build
+  useEffect(() => {
+    if (enterPress && ctrlPress) {
+      handleCompile();
+    }
+  }, [enterPress, ctrlPress, handleCompile]);
+
+  const onChange = (action, data) => {
+    if (action === "code") setCode(data);
+    else console.warn("case not handled!", action, data);
+  };
+
+  const showSuccessToast = (msg) =>
+    toast.success(msg || "Compiled Successfully!", {
       position: "top-right",
       autoClose: 1000,
       hideProgressBar: false,
@@ -176,42 +147,30 @@ const Landing = () => {
       draggable: true,
       progress: undefined,
     });
-  };
 
-  const showErrorToast = (msg, timer) => {
-    toast.error(msg || `Something went wrong! Please try again.`, {
+  const showErrorToast = (msg, timer) =>
+    toast.error(msg || "Something went wrong! Please try again.", {
       position: "top-right",
-      autoClose: timer ? timer : 1000,
+      autoClose: timer || 1000,
       hideProgressBar: false,
       closeOnClick: true,
       pauseOnHover: true,
       draggable: true,
       progress: undefined,
     });
-  };
 
   return (
     <>
-      <ToastContainer
-        position="top-right"
-        autoClose={2000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-      />
+      <ToastContainer position="top-right" autoClose={2000} hideProgressBar={false} />
 
       <a
-        href="https://github.com/Codesmashersgit"
+        href="https://github.com/Codesmashersgit/Editor"
         title="Fork me on GitHub"
         className="github-corner"
         target="_blank"
         rel="noreferrer"
       >
-        <svg
+          <svg
           width="50"
           height="50"
           viewBox="0 0 250 250"
@@ -234,31 +193,21 @@ const Landing = () => {
       </a>
 
       <div className="h-4 w-full bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500"></div>
-      <div className="flex flex-row">
-        <div className="px-4 py-2">
-          <LanguagesDropdown onSelectChange={onSelectChange} />
-        </div>
-        <div className="px-4 py-2">
-          <ThemeDropdown handleThemeChange={handleThemeChange} theme={theme} />
-        </div>
+
+      <div className="flex flex-row px-4 py-2">
+        <LanguagesDropdown onSelectChange={onSelectChange} />
+        <ThemeDropdown handleThemeChange={handleThemeChange} theme={theme} />
       </div>
+
       <div className="flex space-x-4 items-start px-4 py-4">
         <div className="flex flex-col w-full h-full justify-start items-end">
-          <CodeEditorWindow
-            code={code}
-            onChange={onChange}
-            language={language?.value}
-            theme={theme.value}
-          />
+          <CodeEditorWindow code={code} onChange={onChange} language={language?.value} theme={theme.value} />
         </div>
 
         <div className="right-container flex flex-shrink-0 w-[30%] flex-col">
           <OutputWindow outputDetails={outputDetails} />
           <div className="flex flex-col items-end">
-            <CustomInput
-              customInput={customInput}
-              setCustomInput={setCustomInput}
-            />
+            <CustomInput customInput={customInput} setCustomInput={setCustomInput} />
             <button
               onClick={handleCompile}
               disabled={!code}
@@ -273,7 +222,6 @@ const Landing = () => {
           {outputDetails && <OutputDetails outputDetails={outputDetails} />}
         </div>
       </div>
-     
     </>
   );
 };
