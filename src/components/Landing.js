@@ -82,10 +82,6 @@ const Landing = () => {
   };
 
   const handleCompile = () => {
-    console.log("API URL:", process.env.REACT_APP_RAPID_API_URL); 
-    console.log("API Host:", process.env.REACT_APP_RAPID_API_HOST); 
-    console.log("API Key:", process.env.REACT_APP_RAPID_API_KEY); 
-
     setProcessing(true);
     const formData = {
       language_id: language.id,
@@ -107,7 +103,6 @@ const Landing = () => {
     axios
       .request(options)
       .then(function (response) {
-        console.log("Submission Response:", response.data); 
         const token = response.data.token;
         checkStatus(token);
       })
@@ -117,8 +112,7 @@ const Landing = () => {
       });
   };
 
-  const checkStatus = async (token) => {
-    console.log("Checking status for token:", token); 
+  const checkStatus = async (token) => { 
 
     const options = {
       method: "GET",
@@ -130,8 +124,7 @@ const Landing = () => {
       },
     };
     try {
-      let response = await axios.request(options);
-      console.log("Status Response:", response.data); 
+      let response = await axios.request(options); 
 
       let statusId = response.data.status?.id;
 
@@ -146,7 +139,7 @@ const Landing = () => {
         setProcessing(false);
         setOutputDetails(response.data);
         showSuccessToast(`Compiled Successfully!`);
-        console.log("response.data", response.data);
+       
         return;
       }
     } catch (err) {
