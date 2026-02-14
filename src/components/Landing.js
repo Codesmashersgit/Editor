@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useCallback } from "react";
-import CodeEditorWindow from "./CodeEditorWindow";
 import axios from "axios";
 import { classnames } from "../utils/general";
 import { languageOptions } from "../constants/languageOptions";
@@ -9,6 +8,7 @@ import "react-toastify/dist/ReactToastify.css";
 
 import { defineTheme } from "../lib/defineTheme";
 import useKeyPress from "../hooks/useKeyPress";
+import CodeEditorWindow from "./CodeEditorWindow";
 import OutputWindow from "./OutputWindow";
 import CustomInput from "./CustomInput";
 import OutputDetails from "./OutputDetails";
@@ -21,15 +21,15 @@ const javascriptDefault = `/**
 
 // Time: O(log n)
 const binarySearch = (arr, target) => {
- return binarySearchHelper(arr, target, 0, arr.length - 1);
+  return binarySearchHelper(arr, target, 0, arr.length - 1);
 };
 
 const binarySearchHelper = (arr, target, start, end) => {
- if (start > end) return false;
- let mid = Math.floor((start + end) / 2);
- if (arr[mid] === target) return mid;
- if (arr[mid] < target) return binarySearchHelper(arr, target, mid + 1, end);
- if (arr[mid] > target) return binarySearchHelper(arr, target, start, mid - 1);
+  if (start > end) return false;
+  let mid = Math.floor((start + end) / 2);
+  if (arr[mid] === target) return mid;
+  if (arr[mid] < target) return binarySearchHelper(arr, target, mid + 1, end);
+  if (arr[mid] > target) return binarySearchHelper(arr, target, start, mid - 1);
 };
 
 const arr = [1,2,3,4,5,6,7,8,9,10];
@@ -50,14 +50,50 @@ const Landing = () => {
 
   const onSelectChange = (sl) => setLanguage(sl);
 
-  // ✅ Stable handleCompile wrapped in useCallback
+  // ✅ checkStatus wrapped in useCallback to prevent lint warnings
+  const checkStatus = useCallback(async (token) => {
+    const options = {
+      method: "GET",
+      url: `${process.env.REACT_APP_RAPID_API_URL}/submissions/${token}`,
+      params: { base64_encoded: "true", fields: "*" },
+      headers: {
+        "x-rapidapi-host": process.env.REACT_APP_RAPID_API_HOST,
+        "x-rapidapi-key": process.env.REACT_APP_RAPID_API_KEY,
+      },
+    };
+
+    try {
+      const response = await axios.request(options);
+      const statusId = response.data.status?.id;
+
+      if (statusId === 1 || statusId === 2) {
+        // still processing
+        setTimeout(() => checkStatus(token), 2000);
+        return;
+      } else {
+        setProcessing(false);
+        setOutputDetails(response.data);
+        showSuccessToast("Compiled Successfully!");
+      }
+    } catch (err) {
+      console.error("Status Check Error:", err.response || err);
+      setProcessing(false);
+      showErrorToast();
+    }
+  }, []);
+
+  // ✅ handleCompile wrapped in useCallback with correct deps
   const handleCompile = useCallback(() => {
+    if (!language?.id) return;
+
     setProcessing(true);
+
     const formData = {
       language_id: language.id,
       source_code: btoa(code),
       stdin: btoa(customInput),
     };
+
     const options = {
       method: "POST",
       url: `${process.env.REACT_APP_RAPID_API_URL}/submissions`,
@@ -77,60 +113,24 @@ const Landing = () => {
         console.error("Submission Error:", err.response || err);
         setProcessing(false);
       });
-  }, [code, customInput, language]);
+  }, [code, customInput, language, checkStatus]);
 
-  const checkStatus = async (token) => {
-    const options = {
-      method: "GET",
-      url: `${process.env.REACT_APP_RAPID_API_URL}/submissions/${token}`,
-      params: { base64_encoded: "true", fields: "*" },
-      headers: {
-        "x-rapidapi-host": process.env.REACT_APP_RAPID_API_HOST,
-        "x-rapidapi-key": process.env.REACT_APP_RAPID_API_KEY,
-      },
-    };
-
-    try {
-      let response = await axios.request(options);
-      let statusId = response.data.status?.id;
-
-      if (statusId === 1 || statusId === 2) {
-        // still processing
-        setTimeout(() => checkStatus(token), 2000);
-        return;
-      } else {
-        setProcessing(false);
-        setOutputDetails(response.data);
-        showSuccessToast("Compiled Successfully!");
-      }
-    } catch (err) {
-      console.error("Status Check Error:", err.response || err);
-      setProcessing(false);
-      showErrorToast();
-    }
-  };
+  // Trigger compile on Ctrl+Enter
+  useEffect(() => {
+    if (enterPress && ctrlPress) handleCompile();
+  }, [enterPress, ctrlPress, handleCompile]);
 
   const handleThemeChange = (th) => {
-    if (["light", "vs-dark"].includes(th.value)) {
-      setTheme(th);
-    } else {
-      defineTheme(th.value).then(() => setTheme(th));
-    }
+    if (["light", "vs-dark"].includes(th.value)) setTheme(th);
+    else defineTheme(th.value).then(() => setTheme(th));
   };
 
-  // Initial theme setup
+  // Initial theme
   useEffect(() => {
     defineTheme("oceanic-next").then(() =>
       setTheme({ value: "oceanic-next", label: "Oceanic Next" })
     );
   }, []);
-
-  // ✅ useEffect with handleCompile in deps to fix Netlify CI build
-  useEffect(() => {
-    if (enterPress && ctrlPress) {
-      handleCompile();
-    }
-  }, [enterPress, ctrlPress, handleCompile]);
 
   const onChange = (action, data) => {
     if (action === "code") setCode(data);
@@ -170,12 +170,7 @@ const Landing = () => {
         target="_blank"
         rel="noreferrer"
       >
-          <svg
-          width="50"
-          height="50"
-          viewBox="0 0 250 250"
-          className="relative z-20 h-20 w-20"
-        >
+        <svg width="50" height="50" viewBox="0 0 250 250" className="relative z-20 h-20 w-20">
           <title>Fork me on GitHub</title>
           <path d="M0 0h250v250"></path>
           <path
@@ -194,7 +189,7 @@ const Landing = () => {
 
       <div className="h-4 w-full bg-gradient-to-r from-pink-500 via-red-500 to-yellow-500"></div>
 
-      <div className="flex flex-row px-4 py-2">
+      <div className="flex flex-row px-4 py-2 space-x-4">
         <LanguagesDropdown onSelectChange={onSelectChange} />
         <ThemeDropdown handleThemeChange={handleThemeChange} theme={theme} />
       </div>
